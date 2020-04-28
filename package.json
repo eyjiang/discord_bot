@@ -1,0 +1,16 @@
+{
+  "name": "temp-name",
+  "version": "1.0.0",
+  "description": "Yeet",
+  "main": "bot.js",
+  "author": "Evan Jiang",
+  "dependencies": {
+    "@discordjs/opus": "^0.2.1",
+    "discord.js": "^12.2.0",
+    "ffmpeg-static": "^4.1.1",
+    "robotjs": "^0.6.0"
+  },
+  "devDependencies": {
+    "node-key-sender": "^1.0.11"
+  }
+}

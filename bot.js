@@ -1,67 +1,259 @@
-const Discord = require('discord.js');
-const client = new Discord.Client();
-// var robot = require("robotjs");
-var au = require('autoit');
-au.Init();
+const Discord = require("discord.js");
+const fs = require("fs");
+const ytdl = require("ytdl-core");
+const readline = require("readline");
+const MP3Cutter = require("mp3-cutter");
+const ffmpeg = require("fluent-ffmpeg");
 
-client.once('ready', () => {
-	console.log('Ready!');
+const helpers = require("./helpers");
+const auth = fs.readFileSync('auth.json');
+
+
+const client = new Discord.Client();
+const MAX_VID_LENGTH = 12000; // Max video length in seconds allowed to download for command convert
+const MAX_CLIP_LENGTH = 10;
+const CLIP_VOLUME = 0.75;
+
+let allAudioFiles = {};
+let georgeCount = 0;
+let ericCount = 0;
+
+
+client.login(JSON.parse(auth)["token"]);
+
+client.once("ready", () => {
+  allAudioFiles = JSON.parse(fs.readFileSync("./cmds_dict.txt"));
+  georgeCount = JSON.parse(fs.readFileSync("./georgeCount.txt"))["georgeCount"];
+  ericCount = JSON.parse(fs.readFileSync("./ericCount.txt"))["ericCount"];
+  helpers.updateAudioFiles(allAudioFiles);
+  console.log("Ready!");
 });
 
 
-client.login('NzA0NDc0MzgxODc0NzU3NzIy.XqdwVQ.1RtKndSc6sbz4xvhxI4ep_KzcVg');
+async function playAudio(audioName, message, vol, leaveOnEnd = true) {
+  // Only try to join the sender's voice channel if they are in one themselves
+  if (message.member.voice.channel) {
+    // Count audio uses
+    allAudioFiles[audioName] += 1;
+    const connection = await message.member.voice.channel.join();
+    const dispatcher = connection.play("./audio/" + audioName + ".mp3", {
+      volume: vol
+    });
+    dispatcher.on("finish", () => {
+      console.log("Done playing audio!");
+      dispatcher.destroy(); // end the stream
+      if (leaveOnEnd) {
+        message.member.voice.channel.leave();
+      }
 
-async function playAudio(audioName, message) {
-    // Only try to join the sender's voice channel if they are in one themselves
-    if (message.member.voice.channel) {
-      const connection = await message.member.voice.channel.join();
-      const dispatcher = connection.play('./audio/' + audioName + '.mp3', {
-          volume: 1.0,
+      // Save this object to file
+      fs.writeFile("cmds_dict.txt", JSON.stringify(allAudioFiles), function(
+        err
+      ) {
+        if (err) console.log(err);
       });
-      dispatcher.on('finish', () => {
-          console.log("Done playing audio!")
-          dispatcher.destroy(); // end the stream
-          message.member.voice.channel.leave();
-      });
-    } else {
-      message.reply('You need to join a voice channel first!');
-    }
+    });
+  } else {
+    message.reply("You need to join a voice channel first!");
+  }
 }
 
+client.on("message", async message => {
+  // Voice only works in guilds, if the message does not come from a guild,
+  // we ignore it
+  if (!message.guild) return;
 
-client.on('message', async message => {
-    // Voice only works in guilds, if the message does not come from a guild,
-    // we ignore it
-    if (!message.guild) return;
-  
-    if (message.content === '!crazy') {
-        playAudio("thats_crazy", message)
+  // Take in input arguments
+  const prefix = "!";
+  const args = message.content.slice(prefix.length).split(" ");
+  const command = args.shift().toLowerCase();
+
+  const cmd = message.content.slice(1);
+
+  // Audio clips
+  if (message.content === "!help") {
+    let helpStr = "";
+
+    // Sort for first five most used commands
+    // Create items array
+    var items = Object.keys(allAudioFiles).map(function(key) {
+      return [key, allAudioFiles[key]];
+    });
+
+    // Sort the array based on the second element
+    items.sort(function(first, second) {
+      return second[1] - first[1];
+    });
+
+    // Create a new array with only the first 5 items
+    let top_cmds = items.slice(0, 5);
+
+    Object.keys(allAudioFiles).forEach(filename => {
+      helpStr += "!" + filename + ", ";
+    });
+    helpStr = helpStr.slice(0, -2);
+    message.channel.send({
+      embed: {
+        color: 3447003,
+        author: {
+          name: "CARL BOT",
+          icon_url: client.user.avatarURL
+        },
+        title: "Bruh",
+        // url: "https://www.youtube.com/watch?v=jffpcbPMW6Q",
+        description: "Evan's Crappy Carl bot",
+        fields: [
+          {
+            name: "Clip Commands",
+            value: helpStr
+          },
+          {
+            name: "Most Popular",
+            value: top_cmds
+          },
+          {
+            name: "Using !add:",
+            value:
+              "Use this command like: \n !add YOUTUBE_URL desired_command_name video_start_time duration_in_seconds \n e.g. **!add YOUTUBE_URL ree 1 3** \n Will snip the youtube video from 1 to 4 seconds, and create a new command !ree"
+          }
+          //   {
+          //     name: "Markdown",
+          //     value: "You can put all the *usual* **__Markdown__** inside of them."
+          //   }
+        ],
+        timestamp: new Date(),
+        footer: {
+          icon_url: client.user.avatarURL,
+          text: "© Yeet"
+        }
+      }
+    });
+  } else if (message.content === "george sad when") {
+    message.channel.send(
+      `You have sent ${georgeCount} "george sad when"s across all servers.`,
+      {
+        files: [
+          "https://cdn.discordapp.com/attachments/211149632951025664/784293166634500116/rsz_1garage.png"
+        ]
+      }
+    );
+    georgeCount += 1;
+
+    // Save this object to file
+    fs.writeFile(
+      "georgeCount.txt",
+      JSON.stringify({ georgeCount: georgeCount }),
+      function(err) {
+        if (err) console.log(err);
+      }
+    );
+  } else if (message.content === "eric sad when") {
+    message.channel.send(
+      `You have sent ${ericCount} "eric sad when"s across all servers.`
+    );
+    ericCount += 1;
+
+    // Save this object to file
+    fs.writeFile(
+      "ericCount.txt",
+      JSON.stringify({ ericCount: ericCount }),
+      function(err) {
+        if (err) console.log(err);
+      }
+    );
+  } else if (command === "add") {
+    if (!args.length || args.length !== 4) {
+      message.channel.send(
+        "Use this command like: \n !add YOUTUBE_URL desired_command_name video_start_time duration_in_seconds \n e.g. **!add YOUTUBE_URL ree 1 3** \n Will snip the youtube video from 1 to 4 seconds, and create a new command !ree"
+      );
+      return;
+    }
+    // edge case: don't let them name it !add or !help or any existing commands
+    let url = args[0];
+    let cmd_name = args[1];
+    let startTime = args[2];
+    let duration = args[3];
+
+    if (parseInt(duration) > MAX_CLIP_LENGTH) {
+      message.channel.send(
+        "Keep clip less than " + MAX_CLIP_LENGTH + " seconds."
+      );
+      return;
+    } else if (cmd_name === "add" || cmd_name === "help") {
+      message.channel.send("yea yea i see you tryna edge case my ass");
+      return;
+    } else if (cmd_name in allAudioFiles) {
+      message.channel.send("Command name already exists.");
+      return;
     }
 
-    else if (message.content === '!laughing') {
-        playAudio("squad_laughing", message)
-    }
+    addClip(url, cmd_name, startTime, duration, message);
+  } else if (command === "remove") {
+  } else if (cmd in allAudioFiles) {
+    playAudio(cmd, message, CLIP_VOLUME);
+  }
+});
 
-    else if (message.content === '!a') {
-        // robot.typeString("x");
-        // robot.keyTap("enter");
-        // ks.sendKey('x');
-        au.Send("Hello, autoit & nodejs!");
+async function addClip(url, cmdName, startSeconds, duration, message) {
+  console.log("Adding an audio clip");
+
+  // Grab the id, removing extraneous youtube url info
+  const id = url.split("?v=")[1].split("&")[0];
+
+  ytdl.getInfo(id).then(info => {
+    // Check for max video length
+    console.log("title:", info.videoDetails.title);
+    console.log("video length:", info.videoDetails.lengthSeconds);
+    console.log(`duration: ${duration}`, "seconds");
+
+    if (parseInt(info.videoDetails.lengthSeconds) > MAX_VID_LENGTH) {
+      message.channel.send(
+        "This video is too long for Evan's low-storage Mac to download; pick a video less than " +
+          MAX_VID_LENGTH +
+          " seconds."
+      );
+      return;
     }
-    else if (message.content === '!b') {
-        robot.typeString("z");
-    }
-    else if (message.content === '!l') {
-        robot.keyTap("left");
-    }
-    else if (message.content === '!r') {
-        robot.keyTap("right");
-    }
-    else if (message.content === '!u') {
-        robot.keyTap("up");
-    }
-    else if (message.content === '!d') {
-        robot.keyTap("down");
-    }
+    message.channel.send("downloading file...");
+    clipAndSnip(id, cmdName, startSeconds, duration).then(() => {
+      message.reply(`finished downloading mp3 file for command !${cmdName}`);
+    });
+  });
+}
+
+async function clipAndSnip(id, cmdName, startSeconds, duration) {
+  let audioFile = `./audio/__${cmdName}.mp3`;
+  let newAudioFile = `./audio/${cmdName}.mp3`;
+
+  let stream = ytdl(id, {
+    quality: "lowestaudio"
   });
 
+  let start = Date.now();
+  ffmpeg(stream)
+    .audioBitrate(128)
+    .save(audioFile)
+    .on("progress", p => {
+      readline.cursorTo(process.stdout, 0);
+      process.stdout.write(`${p.targetSize}kb downloaded`);
+    })
+    .on("end", () => {
+      console.log(
+        `\ndone downloading full mp3, splicing - ${(Date.now() - start) /
+          1000}s`
+      );
+
+      let startSecondsInt = parseInt(startSeconds);
+      let endSecondsInt = parseInt(startSeconds) + parseInt(duration);
+
+      MP3Cutter.cut({
+        src: audioFile,
+        target: newAudioFile,
+        start: startSecondsInt,
+        end: endSecondsInt
+      });
+
+      fs.unlinkSync(audioFile);
+      helpers.updateAudioFiles();
+    });
+}

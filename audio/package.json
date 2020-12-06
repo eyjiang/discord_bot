@@ -1,0 +1,22 @@
+{
+  "name": "temp-name",
+  "version": "1.0.0",
+  "description": "Yeet",
+  "main": "bot.js",
+  "author": "Evan Jiang",
+  "dependencies": {
+    "@discordjs/opus": "^0.2.1",
+    "@ffmpeg-installer/ffmpeg": "^1.0.20",
+    "discord.js": "^12.2.0",
+    "ffmpeg": "0.0.4",
+    "ffmpeg-static": "^4.1.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "robotjs": "^0.6.0",
+    "ytdl-core": "^4.1.2",
+    "ytdl-core-discord": "^1.2.0",
+    "ytdl-getinfo": "^1.1.0"
+  },
+  "devDependencies": {
+    "node-key-sender": "^1.0.11"
+  }
+}

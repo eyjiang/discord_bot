@@ -254,6 +254,6 @@ async function clipAndSnip(id, cmdName, startSeconds, duration) {
       });
 
       fs.unlinkSync(audioFile);
-      helpers.updateAudioFiles();
+      helpers.updateAudioFiles(allAudioFiles);
     });
 }

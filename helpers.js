@@ -21,10 +21,16 @@ function updateAudioFiles(allAudioFiles) {
           delete allAudioFiles[cmd];
         }
       }
+
+      // Sort the commands alphabetically
+      const sortedAudioFiles = {};
+      Object.keys(allAudioFiles).sort().forEach(function(key) {
+        sortedAudioFiles[key] = allAudioFiles[key];
+      });
   
       // Save this object to file
       console.log("Updating commands file");
-      fs.writeFile("./cmds_dict.txt", JSON.stringify(allAudioFiles), function(
+      fs.writeFile("./cmds_dict.txt", JSON.stringify(sortedAudioFiles), function(
         err
       ) {
         if (err) console.log(err);
@@ -32,4 +38,19 @@ function updateAudioFiles(allAudioFiles) {
     });
   }
 
+  async function playAudioInSpecificChannel(audioName, voiceChannel, vol, leaveOnEnd = true) {
+    const connection = await voiceChannel.join();
+    const dispatcher = connection.play("./audio/" + audioName + ".mp3", {
+      volume: vol
+    });
+    dispatcher.on("finish", () => {
+      console.log("Done playing audio!");
+      dispatcher.destroy(); // end the stream
+      if (leaveOnEnd) {
+        voiceChannel.leave();
+      }
+    });
+  }
+
 module.exports.updateAudioFiles = updateAudioFiles;
+module.exports.playAudioInSpecificChannel = playAudioInSpecificChannel;

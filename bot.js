@@ -8,55 +8,71 @@ const ffmpeg = require("fluent-ffmpeg");
 const helpers = require("./helpers");
 const auth = fs.readFileSync('auth.json');
 
-
 const client = new Discord.Client();
+
 const MAX_VID_LENGTH = 12000; // Max video length in seconds allowed to download for command convert
 const MAX_CLIP_LENGTH = 10;
-const CLIP_VOLUME = 0.75;
+const CLIP_VOLUME = 0.67;
 
 let allAudioFiles = {};
 let georgeCount = 0;
 let ericCount = 0;
+let isPlaying = false;
 
 
 client.login(JSON.parse(auth)["token"]);
+let mainVoiceChannel;
+let mainTextChannel;
+let botTextChannel;
+
+async function playAudio(audioName, message, vol, leaveOnEnd = false) {
+  // Only try to join the sender's voice channel if they are in one themselves
+  if (!isPlaying) {
+    if (message.member.voice.channel) {
+      // An effective "mutex" that blocks on double calls
+      isPlaying = true;
+  
+      // Count audio uses
+      allAudioFiles[audioName] += 1;
+      const connection = await message.member.voice.channel.join();
+      const dispatcher = connection.play("./audio/" + audioName + ".mp3", {
+        volume: vol
+      });
+      dispatcher.on("finish", () => {
+        console.log("Done playing audio!");
+        dispatcher.destroy(); // end the stream
+        if (leaveOnEnd) {
+          message.member.voice.channel.leave();
+        }
+  
+        // Save this object to file
+        fs.writeFile("cmds_dict.txt", JSON.stringify(allAudioFiles), function(
+          err
+        ) {
+          if (err) console.log(err);
+        });
+  
+        isPlaying = false;
+      });
+    } else {
+      message.reply("You need to join a voice channel first!");
+    }
+  }
+}
 
 client.once("ready", () => {
   allAudioFiles = JSON.parse(fs.readFileSync("./cmds_dict.txt"));
   georgeCount = JSON.parse(fs.readFileSync("./georgeCount.txt"))["georgeCount"];
   ericCount = JSON.parse(fs.readFileSync("./ericCount.txt"))["ericCount"];
   helpers.updateAudioFiles(allAudioFiles);
+
+  mainVoiceChannel = client.channels.cache.get('211149632951025665');
+  mainTextChannel = client.channels.cache.get('785796515712729088');
+  botTextChannel = client.channels.cache.get('331234726318833675')
+
   console.log("Ready!");
 });
 
-
-async function playAudio(audioName, message, vol, leaveOnEnd = true) {
-  // Only try to join the sender's voice channel if they are in one themselves
-  if (message.member.voice.channel) {
-    // Count audio uses
-    allAudioFiles[audioName] += 1;
-    const connection = await message.member.voice.channel.join();
-    const dispatcher = connection.play("./audio/" + audioName + ".mp3", {
-      volume: vol
-    });
-    dispatcher.on("finish", () => {
-      console.log("Done playing audio!");
-      dispatcher.destroy(); // end the stream
-      if (leaveOnEnd) {
-        message.member.voice.channel.leave();
-      }
-
-      // Save this object to file
-      fs.writeFile("cmds_dict.txt", JSON.stringify(allAudioFiles), function(
-        err
-      ) {
-        if (err) console.log(err);
-      });
-    });
-  } else {
-    message.reply("You need to join a voice channel first!");
-  }
-}
 
 client.on("message", async message => {
   // Voice only works in guilds, if the message does not come from a guild,
@@ -115,6 +131,11 @@ client.on("message", async message => {
             name: "Using !add:",
             value:
               "Use this command like: \n !add YOUTUBE_URL desired_command_name video_start_time duration_in_seconds \n e.g. **!add YOUTUBE_URL ree 1 3** \n Will snip the youtube video from 1 to 4 seconds, and create a new command !ree"
+          },
+          {
+            name: "Using !remove:",
+            value:
+              'Remove example: "!remove dab" will remove the !dab command'
           }
           //   {
           //     name: "Markdown",
@@ -189,10 +210,46 @@ client.on("message", async message => {
 
     addClip(url, cmd_name, startTime, duration, message);
   } else if (command === "remove") {
+    if (!args.length || args.length !== 1) {
+      message.channel.send(
+        'Remove example: "!remove dab" will remove the !dab command'
+      );
+      return;
+    }
+
+    let cmdToRemove = args[0];
+
+    if (cmdToRemove in allAudioFiles) {
+      fs.unlinkSync(`./audio/${cmdToRemove}.mp3`);
+    
+      helpers.updateAudioFiles(allAudioFiles);
+      message.channel.send(`Command !${cmdToRemove} removed.`);
+    }
+    else {
+      message.channel.send(`There is no command !${cmdToRemove} to be removed.`);
+    }
   } else if (cmd in allAudioFiles) {
-    playAudio(cmd, message, CLIP_VOLUME);
+      try {
+        playAudio(cmd, message, CLIP_VOLUME);
+        
+      }
+      catch (e) {
+        console.log(e);
+      }
   }
 });
+
+client.on('voiceStateUpdate', (oldMember, newMember) => {
+  let newUserChannel = newMember.channelID;
+  let oldUserChannel = oldMember.channelID;
+
+  if(newUserChannel === "211149632951025665")
+  { 
+    if (oldMember.id == '211149463211868160') {
+      // helpers.playAudioInSpecificChannel("jail", mainVoiceChannel, CLIP_VOLUME);
+    }
+  }
+})
 
 async function addClip(url, cmdName, startSeconds, duration, message) {
   console.log("Adding an audio clip");
@@ -215,13 +272,11 @@ async function addClip(url, cmdName, startSeconds, duration, message) {
       return;
     }
     message.channel.send("downloading file...");
-    clipAndSnip(id, cmdName, startSeconds, duration).then(() => {
-      message.reply(`finished downloading mp3 file for command !${cmdName}`);
-    });
+    clipAndSnip(id, cmdName, startSeconds, duration, message);
   });
 }
 
-async function clipAndSnip(id, cmdName, startSeconds, duration) {
+async function clipAndSnip(id, cmdName, startSeconds, duration, message) {
   let audioFile = `./audio/__${cmdName}.mp3`;
   let newAudioFile = `./audio/${cmdName}.mp3`;
 
@@ -255,5 +310,7 @@ async function clipAndSnip(id, cmdName, startSeconds, duration) {
 
       fs.unlinkSync(audioFile);
       helpers.updateAudioFiles(allAudioFiles);
+
+      message.reply(`finished downloading mp3 file for command !${cmdName}`);
     });
 }
